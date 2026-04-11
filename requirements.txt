@@ -1,0 +1,6 @@
+# Industrial IoT Sensor Network
+# Python 3.5 Dependencies - 2017
+
+paho-mqtt==1.3.0
+influxdb==4.1.1
+pyserial==3.4
