@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Raspberry Pi Sensor Gateway
-IT Administrator - Zambaiti (2017)
 
 Collects data from Arduino sensor nodes via serial,
 publishes to MQTT broker, and stores in InfluxDB.
@@ -176,7 +175,7 @@ class SensorGateway:
 
 if __name__ == '__main__':
     config = {
-        'gateway_id': 'gw-zambaiti-001',
+        'gateway_id': 'gw-001',
         'zone': 'production-floor-A',
         'serial_port': '/dev/ttyACM0',
         'mqtt_host': 'localhost',

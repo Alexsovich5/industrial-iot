@@ -1,6 +1,5 @@
 /*
  * Industrial IoT Sensor Node
- * IT Administrator - Zambaiti (2017)
  *
  * Arduino sensor node that reads temperature (DHT22),
  * humidity, and vibration (ADXL345) data, sending
