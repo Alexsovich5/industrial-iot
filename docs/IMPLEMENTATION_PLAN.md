@@ -193,7 +193,7 @@ headers with g++.
 
 **Files:**
 - Create `src/node_simulator.py`:
-  - `generate(profile, sensor_id, seed)`, an infinite iterator of CSV lines using the sketch's precision (1/1/2 dp);
+  - `generate(profile, sensor_id, seed)`, an infinite iterator with one item per reading interval: a CSV line using the sketch's precision (1/1/2 dp), or `None` for an interval with no output (only `dropout` yields `None`, and `serve` writes nothing for it);
   - the profiles `normal`, `overheat` (temperature ramps past 45 °C), `humid`, `vibration-drift` (a slow vibration rise that passes the 2.0 g warn level, then 5.0 g) and `dropout` (occasional skipped intervals with no line at all, which is what the sketch does on a NaN DHT read);
   - `with_noise(lines, rate, seed)`, an explicitly labelled serial-noise injector that inserts garbage and blank lines, used only when `--noise` is above 0 (default 0.0);
   - `serve(host, port, line_factory, interval)`, which uses stdlib `socketserver.ThreadingTCPServer`. `line_factory` is a zero-argument callable such as `lambda: generate(profile, sensor_id, seed)`, and each connection calls it to get its own iterator, so overlapping or repeated connections never share a generator. Each connection first emits the `# Sensor node initialized` banner;
