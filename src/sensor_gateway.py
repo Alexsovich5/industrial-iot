@@ -6,11 +6,13 @@ Collects data from Arduino sensor nodes via serial,
 publishes to MQTT broker, and stores in InfluxDB.
 """
 
+import argparse
 import json
 import time
 import serial
 import logging
 import paho.mqtt.client as mqtt
+import config
 import readings
 from influxdb import InfluxDBClient
 from datetime import datetime
@@ -22,29 +24,36 @@ logger = logging.getLogger('sensor_gateway')
 class SensorGateway:
     """Raspberry Pi gateway for Arduino sensor network."""
 
-    def __init__(self, config):
-        self.gateway_id = config.get('gateway_id', 'gw-001')
-        self.zone = config.get('zone', 'production-floor')
+    def __init__(self, cfg):
+        gateway = cfg.get('gateway', {})
+        serial_cfg = cfg.get('serial', {})
+        mqtt_cfg = cfg.get('mqtt', {})
+        influx_cfg = cfg.get('influxdb', {})
+
+        self.gateway_id = gateway.get('id', 'gw-001')
+        self.zone = gateway.get('zone', 'production-floor')
 
         # Serial connection to Arduino
-        self.serial_port = config.get('serial_port', '/dev/ttyACM0')
-        self.baud_rate = config.get('baud_rate', 9600)
+        self.serial_port = serial_cfg.get('url', '/dev/ttyACM0')
+        self.baud_rate = serial_cfg.get('baud', 9600)
+        self.serial_timeout = serial_cfg.get('timeout', 5)
         self.serial_conn = None
 
         # MQTT client
         self.mqtt_client = mqtt.Client(client_id=self.gateway_id)
-        self.mqtt_host = config.get('mqtt_host', 'localhost')
-        self.mqtt_port = config.get('mqtt_port', 1883)
+        self.mqtt_host = mqtt_cfg.get('host', 'localhost')
+        self.mqtt_port = mqtt_cfg.get('port', 1883)
+        self.mqtt_keepalive = mqtt_cfg.get('keepalive', 60)
 
         # InfluxDB client
         self.influx = InfluxDBClient(
-            host=config.get('influxdb_host', 'localhost'),
-            port=config.get('influxdb_port', 8086),
-            database=config.get('influxdb_database', 'industrial_iot')
+            host=influx_cfg.get('host', 'localhost'),
+            port=influx_cfg.get('port', 8086),
+            database=influx_cfg.get('database', 'industrial_iot')
         )
 
         # Alert thresholds
-        self.thresholds = config.get('thresholds', {
+        self.thresholds = cfg.get('thresholds', {
             'temperature_max': 45.0,
             'humidity_max': 80.0,
             'vibration_max': 5.0
@@ -64,7 +73,7 @@ class SensorGateway:
         """Connect to Arduino via serial."""
         try:
             self.serial_conn = serial.Serial(
-                self.serial_port, self.baud_rate, timeout=5
+                self.serial_port, self.baud_rate, timeout=self.serial_timeout
             )
             time.sleep(2)  # Arduino reset delay
             logger.info("Serial connected: %s", self.serial_port)
@@ -75,7 +84,8 @@ class SensorGateway:
     def _connect_mqtt(self):
         """Connect to MQTT broker."""
         self.mqtt_client.on_connect = self._on_mqtt_connect
-        self.mqtt_client.connect(self.mqtt_host, self.mqtt_port, keepalive=60)
+        self.mqtt_client.connect(self.mqtt_host, self.mqtt_port,
+                                 keepalive=self.mqtt_keepalive)
         self.mqtt_client.loop_start()
 
     def _on_mqtt_connect(self, client, userdata, flags, rc):
@@ -157,14 +167,19 @@ class SensorGateway:
             logger.warning("ALERT: %s", alert_msg)
 
 
-if __name__ == '__main__':
-    config = {
-        'gateway_id': 'gw-001',
-        'zone': 'production-floor-A',
-        'serial_port': '/dev/ttyACM0',
-        'mqtt_host': 'localhost',
-        'influxdb_host': 'localhost',
-        'influxdb_database': 'industrial_iot'
-    }
-    gateway = SensorGateway(config)
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='Read sensor-node lines from serial and publish them.')
+    parser.add_argument('--config', default='config/gateway.ini',
+                        help='path to the gateway INI file')
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    gateway = SensorGateway(config.load(args.config))
     gateway.start()
+
+
+if __name__ == '__main__':
+    main()

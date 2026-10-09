@@ -205,7 +205,7 @@ vibration_warn = 2.0
 window = 12
 ```
 
-Environment overrides are applied by `config.load(path, section_map)`:
+Environment overrides are applied by `config.load(path, env=os.environ)` (only for sections present in the file; ports must be integers):
 
 - `GATEWAY_ID`, `GATEWAY_ZONE`, `SERIAL_URL`
 - `MQTT_HOST`, `MQTT_PORT`
