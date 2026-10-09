@@ -25,8 +25,8 @@ smoke:
 check: lint unit arduino integration
 
 lint:
-	flake8 src tests
-	python -m compileall -q src
+	flake8 src tests scripts
+	python -m compileall -q src scripts
 
 unit:
 	python -m pytest tests/unit

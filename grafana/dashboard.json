@@ -1,0 +1,632 @@
+{
+  "id": null,
+  "title": "Industrial IoT Floor",
+  "tags": [
+    "iot",
+    "influxdb"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "hideControls": false,
+  "schemaVersion": 14,
+  "version": 0,
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "zone",
+        "label": "Zone",
+        "type": "query",
+        "datasource": "industrial_iot",
+        "query": "SHOW TAG VALUES FROM sensor_readings WITH KEY = \"zone\"",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "regex": "",
+        "sort": 1,
+        "hide": 0,
+        "useTags": false,
+        "current": {},
+        "options": []
+      }
+    ]
+  },
+  "rows": [
+    {
+      "title": "Live readings",
+      "height": "280px",
+      "showTitle": true,
+      "collapse": false,
+      "panels": [
+        {
+          "id": 1,
+          "title": "Temperature",
+          "type": "graph",
+          "datasource": "industrial_iot",
+          "span": 4,
+          "targets": [
+            {
+              "refId": "A",
+              "policy": "default",
+              "measurement": "sensor_readings",
+              "resultFormat": "time_series",
+              "select": [
+                [
+                  {
+                    "type": "field",
+                    "params": [
+                      "temperature"
+                    ]
+                  },
+                  {
+                    "type": "mean",
+                    "params": []
+                  }
+                ]
+              ],
+              "groupBy": [
+                {
+                  "type": "time",
+                  "params": [
+                    "$__interval"
+                  ]
+                },
+                {
+                  "type": "tag",
+                  "params": [
+                    "sensor"
+                  ]
+                },
+                {
+                  "type": "fill",
+                  "params": [
+                    "null"
+                  ]
+                }
+              ],
+              "tags": [
+                {
+                  "key": "zone",
+                  "operator": "=~",
+                  "value": "/^$zone$/"
+                }
+              ],
+              "orderByTime": "ASC",
+              "alias": "$tag_sensor"
+            }
+          ],
+          "lines": true,
+          "linewidth": 1,
+          "fill": 1,
+          "points": false,
+          "nullPointMode": "null",
+          "legend": {
+            "show": true,
+            "values": false
+          },
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "xaxis": {
+            "mode": "time",
+            "show": true
+          },
+          "yaxes": [
+            {
+              "format": "celsius",
+              "show": true,
+              "logBase": 1
+            },
+            {
+              "format": "short",
+              "show": false,
+              "logBase": 1
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Humidity",
+          "type": "graph",
+          "datasource": "industrial_iot",
+          "span": 4,
+          "targets": [
+            {
+              "refId": "A",
+              "policy": "default",
+              "measurement": "sensor_readings",
+              "resultFormat": "time_series",
+              "select": [
+                [
+                  {
+                    "type": "field",
+                    "params": [
+                      "humidity"
+                    ]
+                  },
+                  {
+                    "type": "mean",
+                    "params": []
+                  }
+                ]
+              ],
+              "groupBy": [
+                {
+                  "type": "time",
+                  "params": [
+                    "$__interval"
+                  ]
+                },
+                {
+                  "type": "tag",
+                  "params": [
+                    "sensor"
+                  ]
+                },
+                {
+                  "type": "fill",
+                  "params": [
+                    "null"
+                  ]
+                }
+              ],
+              "tags": [
+                {
+                  "key": "zone",
+                  "operator": "=~",
+                  "value": "/^$zone$/"
+                }
+              ],
+              "orderByTime": "ASC",
+              "alias": "$tag_sensor"
+            }
+          ],
+          "lines": true,
+          "linewidth": 1,
+          "fill": 1,
+          "points": false,
+          "nullPointMode": "null",
+          "legend": {
+            "show": true,
+            "values": false
+          },
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "xaxis": {
+            "mode": "time",
+            "show": true
+          },
+          "yaxes": [
+            {
+              "format": "humidity",
+              "show": true,
+              "logBase": 1
+            },
+            {
+              "format": "short",
+              "show": false,
+              "logBase": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Vibration",
+          "type": "graph",
+          "datasource": "industrial_iot",
+          "span": 4,
+          "targets": [
+            {
+              "refId": "A",
+              "policy": "default",
+              "measurement": "sensor_readings",
+              "resultFormat": "time_series",
+              "select": [
+                [
+                  {
+                    "type": "field",
+                    "params": [
+                      "vibration"
+                    ]
+                  },
+                  {
+                    "type": "mean",
+                    "params": []
+                  }
+                ]
+              ],
+              "groupBy": [
+                {
+                  "type": "time",
+                  "params": [
+                    "$__interval"
+                  ]
+                },
+                {
+                  "type": "tag",
+                  "params": [
+                    "sensor"
+                  ]
+                },
+                {
+                  "type": "fill",
+                  "params": [
+                    "null"
+                  ]
+                }
+              ],
+              "tags": [
+                {
+                  "key": "zone",
+                  "operator": "=~",
+                  "value": "/^$zone$/"
+                }
+              ],
+              "orderByTime": "ASC",
+              "alias": "$tag_sensor"
+            }
+          ],
+          "lines": true,
+          "linewidth": 1,
+          "fill": 1,
+          "points": false,
+          "nullPointMode": "null",
+          "legend": {
+            "show": true,
+            "values": false
+          },
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "xaxis": {
+            "mode": "time",
+            "show": true
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "show": true,
+              "logBase": 1
+            },
+            {
+              "format": "short",
+              "show": false,
+              "logBase": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "History",
+      "height": "280px",
+      "showTitle": true,
+      "collapse": false,
+      "panels": [
+        {
+          "id": 4,
+          "title": "1m rollup",
+          "type": "graph",
+          "datasource": "industrial_iot",
+          "span": 12,
+          "targets": [
+            {
+              "refId": "A",
+              "policy": "rollup",
+              "measurement": "sensor_readings_1m",
+              "resultFormat": "time_series",
+              "select": [
+                [
+                  {
+                    "type": "field",
+                    "params": [
+                      "vibration"
+                    ]
+                  },
+                  {
+                    "type": "mean",
+                    "params": []
+                  }
+                ]
+              ],
+              "groupBy": [
+                {
+                  "type": "time",
+                  "params": [
+                    "$__interval"
+                  ]
+                },
+                {
+                  "type": "tag",
+                  "params": [
+                    "sensor"
+                  ]
+                },
+                {
+                  "type": "fill",
+                  "params": [
+                    "null"
+                  ]
+                }
+              ],
+              "tags": [
+                {
+                  "key": "zone",
+                  "operator": "=~",
+                  "value": "/^$zone$/"
+                }
+              ],
+              "orderByTime": "ASC",
+              "alias": "$tag_sensor vibration mean"
+            },
+            {
+              "refId": "B",
+              "policy": "rollup",
+              "measurement": "sensor_readings_1m",
+              "resultFormat": "time_series",
+              "select": [
+                [
+                  {
+                    "type": "field",
+                    "params": [
+                      "vibration_max"
+                    ]
+                  },
+                  {
+                    "type": "max",
+                    "params": []
+                  }
+                ]
+              ],
+              "groupBy": [
+                {
+                  "type": "time",
+                  "params": [
+                    "$__interval"
+                  ]
+                },
+                {
+                  "type": "tag",
+                  "params": [
+                    "sensor"
+                  ]
+                },
+                {
+                  "type": "fill",
+                  "params": [
+                    "null"
+                  ]
+                }
+              ],
+              "tags": [
+                {
+                  "key": "zone",
+                  "operator": "=~",
+                  "value": "/^$zone$/"
+                }
+              ],
+              "orderByTime": "ASC",
+              "alias": "$tag_sensor vibration max"
+            },
+            {
+              "refId": "C",
+              "policy": "rollup",
+              "measurement": "sensor_readings_1m",
+              "resultFormat": "time_series",
+              "select": [
+                [
+                  {
+                    "type": "field",
+                    "params": [
+                      "temperature"
+                    ]
+                  },
+                  {
+                    "type": "mean",
+                    "params": []
+                  }
+                ]
+              ],
+              "groupBy": [
+                {
+                  "type": "time",
+                  "params": [
+                    "$__interval"
+                  ]
+                },
+                {
+                  "type": "tag",
+                  "params": [
+                    "sensor"
+                  ]
+                },
+                {
+                  "type": "fill",
+                  "params": [
+                    "null"
+                  ]
+                }
+              ],
+              "tags": [
+                {
+                  "key": "zone",
+                  "operator": "=~",
+                  "value": "/^$zone$/"
+                }
+              ],
+              "orderByTime": "ASC",
+              "alias": "$tag_sensor temperature"
+            }
+          ],
+          "lines": true,
+          "linewidth": 1,
+          "fill": 1,
+          "points": false,
+          "nullPointMode": "null",
+          "legend": {
+            "show": true,
+            "values": false
+          },
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "xaxis": {
+            "mode": "time",
+            "show": true
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "show": true,
+              "logBase": 1
+            },
+            {
+              "format": "short",
+              "show": false,
+              "logBase": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Alerts",
+      "height": "300px",
+      "showTitle": true,
+      "collapse": false,
+      "panels": [
+        {
+          "id": 5,
+          "title": "Alert events",
+          "type": "table",
+          "datasource": "industrial_iot",
+          "span": 12,
+          "targets": [
+            {
+              "refId": "A",
+              "policy": "default",
+              "measurement": "alerts",
+              "resultFormat": "table",
+              "select": [
+                [
+                  {
+                    "type": "field",
+                    "params": [
+                      "value"
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "field",
+                    "params": [
+                      "limit"
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "type": "field",
+                    "params": [
+                      "message"
+                    ]
+                  }
+                ]
+              ],
+              "groupBy": [
+                {
+                  "type": "tag",
+                  "params": [
+                    "zone"
+                  ]
+                },
+                {
+                  "type": "tag",
+                  "params": [
+                    "sensor"
+                  ]
+                },
+                {
+                  "type": "tag",
+                  "params": [
+                    "metric"
+                  ]
+                },
+                {
+                  "type": "tag",
+                  "params": [
+                    "kind"
+                  ]
+                },
+                {
+                  "type": "tag",
+                  "params": [
+                    "state"
+                  ]
+                }
+              ],
+              "tags": [
+                {
+                  "key": "zone",
+                  "operator": "=~",
+                  "value": "/^$zone$/"
+                }
+              ],
+              "orderByTime": "ASC",
+              "limit": "200"
+            }
+          ],
+          "transform": "table",
+          "pageSize": 20,
+          "scroll": true,
+          "showHeader": true,
+          "sort": {
+            "col": 0,
+            "desc": true
+          },
+          "columns": [],
+          "fontSize": "100%",
+          "styles": [
+            {
+              "pattern": "Time",
+              "type": "date",
+              "dateFormat": "YYYY-MM-DD HH:mm:ss"
+            },
+            {
+              "pattern": "/.*/",
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

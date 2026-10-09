@@ -2,7 +2,7 @@ version: '2.4'
 
 name: industrial-iot
 
-# Simulators, gateways and the processor run the code baked into the tests image.
+# Simulators, gateways, the processor and grafana-init run the code baked into the tests image.
 x-app: &app
   build: .
   image: industrial-iot:tests
@@ -82,6 +82,20 @@ services:
       - mosquitto
       - influxdb
 
+  # One-shot: waits for Grafana's /api/health, then creates the datasource
+  # and loads the dashboard. Safe to re-run.
+  grafana-init:
+    <<: *app
+    command: >-
+      python scripts/grafana_import.py --url http://grafana:3000
+      --user admin --password admin
+      --influx-url http://influxdb:8086 --influx-db industrial_iot
+      --datasource-name industrial_iot --dashboard grafana/dashboard.json
+    restart: "no"
+    depends_on:
+      - grafana
+      - influxdb
+
   tests:
     build: .
     image: industrial-iot:tests
@@ -93,6 +107,7 @@ services:
     environment:
       - MQTT_HOST=mosquitto
       - INFLUXDB_HOST=influxdb
+      - GRAFANA_URL=http://grafana:3000
     depends_on:
       - mosquitto
       - influxdb
