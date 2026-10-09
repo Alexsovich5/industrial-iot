@@ -2,6 +2,11 @@ version: '2.4'
 
 name: industrial-iot
 
+# Simulators, gateways and the processor run the code baked into the tests image.
+x-app: &app
+  build: .
+  image: industrial-iot:tests
+
 services:
   mosquitto:
     image: eclipse-mosquitto:1.4.12@sha256:bb177e7bd81746fc59b919ccb84b6ffffbe1ec1f7f933fa68c3aca4b4be364b6
@@ -32,9 +37,57 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
 
+  simulator-a:
+    <<: *app
+    command: python src/node_simulator.py --port 7000 --sensor-id SN-001 --profile normal --interval 1
+
+  simulator-b:
+    <<: *app
+    command: python src/node_simulator.py --port 7000 --sensor-id SN-101 --profile vibration-drift --interval 1
+
+  gateway-a:
+    <<: *app
+    command: python src/sensor_gateway.py --config config/gateway.ini
+    restart: on-failure
+    environment:
+      - GATEWAY_ID=gw-a
+      - GATEWAY_ZONE=zone-a
+      - SERIAL_URL=socket://simulator-a:7000
+      - MQTT_HOST=mosquitto
+    depends_on:
+      - mosquitto
+      - simulator-a
+
+  gateway-b:
+    <<: *app
+    command: python src/sensor_gateway.py --config config/gateway.ini
+    restart: on-failure
+    environment:
+      - GATEWAY_ID=gw-b
+      - GATEWAY_ZONE=zone-b
+      - SERIAL_URL=socket://simulator-b:7000
+      - MQTT_HOST=mosquitto
+    depends_on:
+      - mosquitto
+      - simulator-b
+
+  processor:
+    <<: *app
+    command: python src/data_processor.py --config config/processor.ini
+    restart: on-failure
+    environment:
+      - MQTT_HOST=mosquitto
+      - INFLUXDB_HOST=influxdb
+    depends_on:
+      - mosquitto
+      - influxdb
+
   tests:
     build: .
     image: industrial-iot:tests
+    # Only started by `make test` (compose run), never by `make up`.
+    profiles:
+      - test
     volumes:
       - .:/app
     environment:

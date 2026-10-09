@@ -378,6 +378,8 @@ and emit edge-triggered alert events on MQTT and into the alerts series.
   - `simulator-b` (`--sensor-id SN-101 --profile vibration-drift --interval 1`);
   - `gateway-a` and `gateway-b` (`SERIAL_URL=socket://simulator-a:7000` and `socket://simulator-b:7000`, plus `GATEWAY_ID`, `GATEWAY_ZONE` and `MQTT_HOST=mosquitto`);
   - `processor` (`MQTT_HOST`, `INFLUXDB_HOST`), with `restart: on-failure` on the gateways and the processor.
+  - These five services share a `x-app` anchor (`build: .`, `image: industrial-iot:tests`) and run the code baked into that image.
+  - Put the `tests` service under `profiles: [test]` so `make up` does not start it. `make test` still runs it, because `compose build tests` and `compose run tests` name the service explicitly.
 - Modify `config/mosquitto.conf` only if needed for the container (it is expected to be unchanged).
 - Modify `Makefile`:
   - `up` runs `$(COMPOSE) up -d --build`.
