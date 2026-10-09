@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: build test up down smoke check lint unit
+.PHONY: build test up down smoke check lint unit arduino
 
 # Host targets (run Docker)
 
@@ -22,7 +22,7 @@ smoke:
 
 # In-container targets (run inside the tests image)
 
-check: lint unit
+check: lint unit arduino
 
 lint:
 	flake8 src tests
@@ -30,3 +30,9 @@ lint:
 
 unit:
 	python -m pytest tests/unit
+
+arduino:
+	mkdir -p build
+	g++ -std=c++11 -Wall -Werror -Itests/arduino/stubs -Iarduino -x c++ \
+		tests/arduino/test_sensor_node.cpp -o build/test_sensor_node \
+		&& build/test_sensor_node

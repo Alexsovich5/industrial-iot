@@ -11,11 +11,18 @@
 #include <DHT.h>
 #include <Wire.h>
 
+#include "sensor_logic.h"
+
 // Pin definitions
 #define DHT_PIN 2
 #define DHT_TYPE DHT22
-#define VIBRATION_PIN A0
 #define LED_STATUS 13
+
+// ADXL345 I2C address and registers
+#define ADXL345_ADDR 0x53
+#define ADXL345_POWER_CTL 0x2D
+#define ADXL345_DATA_FORMAT 0x31
+#define ADXL345_DATAX0 0x32
 
 // Configuration
 const char* SENSOR_ID = "SN-001";
@@ -30,18 +37,24 @@ float temperature = 0;
 float humidity = 0;
 float vibration = 0;
 
+float readVibration();
+
+void writeRegister(uint8_t reg, uint8_t value) {
+    Wire.beginTransmission(ADXL345_ADDR);
+    Wire.write(reg);
+    Wire.write(value);
+    Wire.endTransmission();
+}
+
 void setup() {
     Serial.begin(9600);
     dht.begin();
     Wire.begin();
     pinMode(LED_STATUS, OUTPUT);
-    pinMode(VIBRATION_PIN, INPUT);
 
     // Initialize ADXL345 accelerometer
-    Wire.beginTransmission(0x53);
-    Wire.write(0x2D); // Power control register
-    Wire.write(8);    // Measure mode
-    Wire.endTransmission();
+    writeRegister(ADXL345_DATA_FORMAT, 0x0B); // FULL_RES, +/-16 g, 4 mg/LSB
+    writeRegister(ADXL345_POWER_CTL, 0x08);   // Measure mode
 
     digitalWrite(LED_STATUS, HIGH);
     delay(1000);
@@ -88,25 +101,24 @@ void loop() {
 }
 
 float readVibration() {
-    // Read ADXL345 accelerometer
-    Wire.beginTransmission(0x53);
-    Wire.write(0x32); // Start at register 0x32
+    // Read the six data registers starting at DATAX0
+    Wire.beginTransmission(ADXL345_ADDR);
+    Wire.write(ADXL345_DATAX0);
     Wire.endTransmission();
-    Wire.requestFrom(0x53, 6);
+    Wire.requestFrom(ADXL345_ADDR, 6);
 
     if (Wire.available() >= 6) {
-        int16_t x = Wire.read() | (Wire.read() << 8);
-        int16_t y = Wire.read() | (Wire.read() << 8);
-        int16_t z = Wire.read() | (Wire.read() << 8);
+        // Read each byte into its own variable so the order is fixed
+        uint8_t x0 = Wire.read();
+        uint8_t x1 = Wire.read();
+        uint8_t y0 = Wire.read();
+        uint8_t y1 = Wire.read();
+        uint8_t z0 = Wire.read();
+        uint8_t z1 = Wire.read();
 
-        // Convert to g-force and calculate magnitude
-        float xg = x * 0.004;
-        float yg = y * 0.004;
-        float zg = z * 0.004;
-
-        // Subtract gravity (Z-axis) and return magnitude
-        zg -= 1.0;
-        return sqrt(xg * xg + yg * yg + zg * zg);
+        return vibrationMagnitude(combineBytes(x0, x1),
+                                  combineBytes(y0, y1),
+                                  combineBytes(z0, z1));
     }
 
     return 0.0;
