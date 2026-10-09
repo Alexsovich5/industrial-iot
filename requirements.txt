@@ -1,6 +1,14 @@
 # Industrial IoT Sensor Network
-# Python 3.5 Dependencies - 2017
+# Python 3.5 runtime dependencies, with exact transitive pins
 
 paho-mqtt==1.3.0
 influxdb==4.1.1
 pyserial==3.4
+requests==2.18.4
+urllib3==1.22
+chardet==3.0.4
+idna==2.6
+certifi==2017.11.5
+python-dateutil==2.6.1
+pytz==2017.3
+six==1.11.0

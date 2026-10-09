@@ -36,7 +36,7 @@ This plan implements [SPEC.md](SPEC.md) in dependency order. Each task is one co
 - Create `tests/__init__.py`, `tests/unit/__init__.py` and `tests/unit/test_environment.py`.
 - Create `docker/grafana/Dockerfile` (the Hub `grafana/grafana` 4.x images are schema-1 and cannot be pulled):
   - `FROM debian:stretch-20171210@sha256:0a5fcee6f52d5170f557ee2447d7a10a5bdcf715dd7f0250be0b678c556a501b`;
-  - point `/etc/apt/sources.list` at `http://snapshot.debian.org/archive/debian/20171231T000000Z stretch main` and run apt with `-o Acquire::Check-Valid-Until=false`;
+  - point `/etc/apt/sources.list` at `http://snapshot.debian.org/archive/debian/20171231T000000Z stretch main` and run apt with `-o Acquire::Check-Valid-Until=false`. The archive keys that signed this snapshot have since expired (`EXPKEYSIG`), so apt rejects the signature. `update` therefore also passes `-o Acquire::AllowInsecureRepositories=true` and `install` passes `--allow-unauthenticated`. apt still checks each package against the hashes in the downloaded `Release` file, and after the install the build fetches `Release.gpg` with `curl -fsSL` and verifies that `Release` file with `gpgv` against the keyrings in `/etc/apt/trusted.gpg.d/`; a bad signature fails the build;
   - `apt-get install -y --no-install-recommends adduser libfontconfig1 ca-certificates curl`;
   - download `https://s3-us-west-2.amazonaws.com/grafana-releases/release/grafana_4.6.3_amd64.deb`, check it with `echo "d022fceb939e7570d74b437932bee876e306b0e21ecdd830752c61b4e89dab31  grafana.deb" | sha256sum -c -`, then `dpkg -i grafana.deb` and delete it;
   - `EXPOSE 3000`, `USER grafana`, and run `grafana-server --homepath=/usr/share/grafana --config=/etc/grafana/grafana.ini cfg:default.paths.data=/var/lib/grafana cfg:default.paths.logs=/var/log/grafana`.
@@ -45,8 +45,9 @@ This plan implements [SPEC.md](SPEC.md) in dependency order. Each task is one co
   - `version: '2.4'` (needed for the per-service `platform` key).
   - `eclipse-mosquitto:1.4` → `eclipse-mosquitto:1.4.12@sha256:bb177e7bd81746fc59b919ccb84b6ffffbe1ec1f7f933fa68c3aca4b4be364b6` with `platform: linux/amd64` (the old tag is 404 on Docker Hub; 1.4.12 is amd64-only).
   - `influxdb:1.3` → `influxdb:1.3.8@sha256:8c3157245ee6863203cf2f410d026b8e3683b502f9bd967728337ece4c730cc0`.
-  - `grafana/grafana:4.6.0` → `build: docker/grafana` with `image: industrial-iot/grafana:4.6.3` and `platform: linux/amd64`.
-  - Add a `tests` service (`build: .`, `volumes: [.:/app]`, `depends_on: [mosquitto, influxdb, grafana]`, `command: make check`).
+  - `grafana/grafana:4.6.0` → `build: docker/grafana` with `image: industrial-iot:grafana-4.6.3` and `platform: linux/amd64`.
+  - Add a `tests` service (`build: .`, `image: industrial-iot:tests`, `volumes: [.:/app]`, `depends_on: [mosquitto, influxdb, grafana]`, `command: make check`).
+  - Set the top-level `name: industrial-iot`, put the default network on subnet `172.45.0.0/24`, and publish host ports in the 20500–20599 range: Mosquitto `20583:1883`, InfluxDB `20586:8086`, Grafana `20530:3000`. This keeps the stack from clashing with other stacks on a shared Docker host. Services reach each other by service name on the internal ports, so nothing else changes.
 
 **Tests to write first:** `tests/unit/test_environment.py` asserts:
 - `sys.version_info[:2] == (3, 5)`;
