@@ -9,6 +9,10 @@ UTC time, gateway id and zone, and publishes it with QoS 1 to
 ``sensors/<zone>/<sensor_id>/data``. Storage and alerting are done by the
 data processor. If the serial link fails, the gateway reconnects with
 exponential backoff.
+
+Serial reads are bounded: a line split by a read timeout is joined with
+its remainder before parsing, and a line longer than ``MAX_LINE_BYTES``
+is dropped whole.
 """
 
 import argparse
@@ -29,6 +33,8 @@ ARDUINO_RESET_DELAY = 2
 INITIAL_BACKOFF = 1.0
 MAX_BACKOFF = 30.0
 PUBLISH_FLUSH_TIMEOUT = 5.0
+# Sketch lines are under 64 bytes; anything this long is not a reading.
+MAX_LINE_BYTES = 256
 
 
 def backoff_delays(initial=INITIAL_BACKOFF, maximum=MAX_BACKOFF):
@@ -55,6 +61,10 @@ class SensorGateway(object):
 
         self.gateway_id = gateway.get('id', 'gw-001')
         self.zone = gateway.get('zone', 'production-floor')
+        for label, value in (('gateway id', self.gateway_id), ('zone', self.zone)):
+            if not readings.valid_name(value):
+                raise ValueError('{} {!r} must be 1-64 characters from '
+                                 'A-Z a-z 0-9 _ . -'.format(label, value))
 
         self.serial_url = serial_cfg.get('url', '/dev/ttyACM0')
         self.baud_rate = serial_cfg.get('baud', 9600)
@@ -72,6 +82,8 @@ class SensorGateway(object):
         self.sleep = sleep
         self._pending = []
         self._read_backoff = None
+        self._partial = bytearray()
+        self._discarding = False
 
     # Serial
 
@@ -111,6 +123,34 @@ class SensorGateway(object):
         self._close_serial()
         self.sleep(delay)
         self.serial_conn = self._open_serial()
+        self._partial = bytearray()
+        self._discarding = False
+
+    def _read_line(self):
+        """Read once from serial and return a complete line, or None.
+
+        A chunk without a trailing newline (read timeout) is kept until the
+        rest of the line arrives. The buffer never grows past
+        ``MAX_LINE_BYTES``: an overlong line is dropped up to its newline.
+        """
+        chunk = self.serial_conn.readline(MAX_LINE_BYTES - len(self._partial))
+        if not chunk:
+            return None
+        if self._discarding:
+            if chunk.endswith(b'\n'):
+                self._discarding = False
+            return None
+        self._partial.extend(chunk)
+        if self._partial.endswith(b'\n'):
+            line = bytes(self._partial)
+            self._partial = bytearray()
+            return line
+        if len(self._partial) >= MAX_LINE_BYTES:
+            logger.warning('Dropping serial line longer than %d bytes on %s',
+                           MAX_LINE_BYTES, self.serial_url)
+            self._partial = bytearray()
+            self._discarding = True
+        return None
 
     # MQTT
 
@@ -169,11 +209,11 @@ class SensorGateway(object):
             self.serial_conn = self._open_serial()
             while max_readings is None or published < max_readings:
                 try:
-                    raw = self.serial_conn.readline()
+                    raw = self._read_line()
                 except (serial.SerialException, OSError) as exc:
                     self._reconnect_serial(exc)
                     continue
-                if not raw:
+                if raw is None:
                     continue
                 self._read_backoff = None
                 if self.process_line(raw.decode('utf-8', 'replace')):

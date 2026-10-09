@@ -1,0 +1,6 @@
+# Packages the Grafana 4.6.3 .deb needs on top of debian:stretch-20171210,
+# one NAME=VERSION per line. Their dependencies are resolved against the
+# stretch snapshot by fetch_debs.py.
+adduser=3.115
+libfontconfig1=2.11.0-6.7+b1
+ca-certificates=20161130+nmu1

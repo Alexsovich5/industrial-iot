@@ -162,3 +162,46 @@ def test_from_payload_rejects_invalid_json():
 def test_from_payload_rejects_non_object():
     with pytest.raises(ValueError):
         readings.from_payload('[1, 2, 3]')
+
+
+@pytest.mark.parametrize('timestamp', [
+    'garbage',
+    '',
+    '2017-10-02 10:17:13Z',
+    '2017-10-02T10:17:13',
+    '2017-10-02T10:17:13+04:00',
+    '2017-13-02T10:17:13Z',
+    '2017-10-02T10:17:13.123456Z\n',
+])
+def test_from_payload_rejects_timestamp_that_is_not_utc_iso8601(timestamp):
+    with pytest.raises(ValueError):
+        readings.from_payload(json.dumps(_payload(timestamp=timestamp)))
+
+
+@pytest.mark.parametrize('timestamp', ['2017-10-02T10:17:13Z', '2017-10-02T10:17:13.5Z'])
+def test_from_payload_accepts_utc_timestamps_with_and_without_fraction(timestamp):
+    assert readings.from_payload(json.dumps(_payload(timestamp=timestamp)))['timestamp'] \
+        == timestamp
+
+
+@pytest.mark.parametrize('field', ['gateway', 'zone', 'sensor_id'])
+@pytest.mark.parametrize('value', [
+    '', 'zone a', 'zone/a', 'zone+', 'zone#', 'a\nalerts,zone=x value=1', 'a,b=c', 'zone-a\n',
+    'x' * 65,
+])
+def test_from_payload_rejects_identifiers_outside_the_name_charset(field, value):
+    with pytest.raises(ValueError):
+        readings.from_payload(json.dumps(_payload(**{field: value})))
+
+
+@pytest.mark.parametrize('value', ['zone-a', 'Hall_2', 'line.3'])
+def test_from_payload_accepts_plain_zone_and_gateway_names(value):
+    data = readings.from_payload(json.dumps(_payload(zone=value, gateway=value)))
+    assert data['zone'] == value and data['gateway'] == value
+
+
+def test_to_payload_round_trips_whole_second_timestamps():
+    reading = readings.Reading('SN-001', 23.4, 41.2, 0.12)
+    text = readings.to_payload(reading, 'gw-a', 'zone-a',
+                               datetime.datetime(2017, 10, 2, 10, 17, 13))
+    assert readings.from_payload(text)['timestamp'] == '2017-10-02T10:17:13Z'

@@ -8,7 +8,8 @@ through the ``AlertEngine``. Each alert event is published with QoS 2 to
 ``alerts/<zone>/<sensor_id>`` and written to the ``alerts`` measurement.
 
 Bad payloads are logged and counted as rejected. InfluxDB write errors
-are logged and counted; they never stop the MQTT loop.
+and any other error while handling a message are logged and counted;
+they never stop the MQTT loop.
 """
 
 import argparse
@@ -74,7 +75,7 @@ class DataProcessor(object):
         self.store = store
         self.engine = engine
         self.stats = {'received': 0, 'stored': 0, 'rejected': 0,
-                      'alerts': 0, 'write_errors': 0}
+                      'alerts': 0, 'write_errors': 0, 'errors': 0}
 
         mqtt_client.on_connect = self.on_connect
         mqtt_client.on_message = self.on_message
@@ -101,6 +102,15 @@ class DataProcessor(object):
 
     def on_message(self, client, userdata, msg):
         self.stats['received'] += 1
+        # paho 1.3 does not catch exceptions raised in callbacks: one would
+        # end loop_forever and stop the processor.
+        try:
+            self._handle(msg)
+        except Exception:
+            self.stats['errors'] += 1
+            logger.exception('Unexpected error handling message on %s', msg.topic)
+
+    def _handle(self, msg):
         data = self._parse(msg)
         if data is None:
             self.stats['rejected'] += 1

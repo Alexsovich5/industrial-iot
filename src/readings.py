@@ -6,6 +6,7 @@ the sensor limits and converts readings to and from the MQTT JSON payload.
 """
 
 import collections
+import datetime
 import json
 import math
 import re
@@ -13,7 +14,14 @@ import re
 Reading = collections.namedtuple(
     'Reading', ['sensor_id', 'temperature', 'humidity', 'vibration'])
 
-SENSOR_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,32}$')
+SENSOR_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,32}\Z')
+
+# Gateway ids and zone names end up in MQTT topic levels and InfluxDB tags,
+# so they may not contain '/', '+', '#', whitespace, ',' or '='.
+NAME_RE = re.compile(r'^[A-Za-z0-9_.-]{1,64}\Z')
+
+# UTC ISO 8601 as written by to_payload: whole seconds or a fraction, and 'Z'.
+TIMESTAMP_RE = re.compile(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d{1,6})?Z\Z')
 
 # Inclusive limits from the sensor datasheets: DHT22 temperature and
 # humidity, and the vibration magnitude of an ADXL345 set to +/-16 g.
@@ -105,4 +113,29 @@ def from_payload(text):
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError('payload field {} is not a number'.format(key))
         data[key] = float(value)
+
+    if not SENSOR_ID_RE.match(data['sensor_id']):
+        raise ValueError('payload field sensor_id is not a valid sensor id')
+    for key in ('gateway', 'zone'):
+        if not valid_name(data[key]):
+            raise ValueError('payload field {} is not a valid name'.format(key))
+    if not valid_timestamp(data['timestamp']):
+        raise ValueError('payload field timestamp is not a UTC ISO 8601 time')
     return data
+
+
+def valid_name(text):
+    """True if ``text`` is usable as a gateway id or zone name."""
+    return isinstance(text, str) and NAME_RE.match(text) is not None
+
+
+def valid_timestamp(text):
+    """True if ``text`` is a real UTC time in the form to_payload writes."""
+    match = TIMESTAMP_RE.match(text)
+    if match is None:
+        return False
+    try:
+        datetime.datetime.strptime(match.group(1), '%Y-%m-%dT%H:%M:%S')
+    except ValueError:
+        return False
+    return True

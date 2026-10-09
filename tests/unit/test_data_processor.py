@@ -4,6 +4,7 @@ import json
 import logging
 
 import pytest
+from influxdb import line_protocol
 from influxdb.exceptions import InfluxDBServerError
 
 import alerts
@@ -85,7 +86,7 @@ def test_valid_message_writes_one_reading_and_no_alert():
     assert point['time'] == '2017-10-02T10:17:13.123456Z'
     assert client.published == []
     assert processor.stats == {'received': 1, 'stored': 1, 'rejected': 0,
-                               'alerts': 0, 'write_errors': 0}
+                               'alerts': 0, 'write_errors': 0, 'errors': 0}
 
 
 def test_overheat_publishes_qos2_alert_and_stores_alert_point():
@@ -136,6 +137,65 @@ def test_malformed_payload_is_rejected_and_nothing_written(body):
     assert processor.stats['received'] == 1
     assert processor.stats['rejected'] == 1
     assert processor.stats['stored'] == 0
+
+
+class LineProtocolInfluxClient(FakeInfluxClient):
+    """FakeInfluxClient that serialises each write with the real line-protocol
+    encoder, so values the real client cannot encode raise as they would."""
+
+    def write_points(self, points, time_precision=None, database=None,
+                     retention_policy=None, **kwargs):
+        line_protocol.make_lines({'points': points}, precision=time_precision)
+        return super(LineProtocolInfluxClient, self).write_points(
+            points, time_precision=time_precision, database=database,
+            retention_policy=retention_policy, **kwargs)
+
+
+@pytest.mark.parametrize('body', [
+    payload(timestamp='garbage'),
+    payload(timestamp='2017-10-02 10:17:13'),
+    payload(zone='zone-a\nalerts,zone=x value=1'),
+    payload(sensor_id='SN-001/+'),
+    payload(gateway='gw a'),
+])
+def test_payload_the_store_cannot_encode_is_rejected_without_crashing(body):
+    store = influx_store.InfluxStore(LineProtocolInfluxClient(), 'industrial_iot')
+    processor, client, influx = make_processor(store)
+    client.fire_message('sensors/zone-a/SN-001/data', body)
+    assert processor.stats['rejected'] == 1
+    assert processor.stats['stored'] == 0
+    assert influx.points == []
+    assert client.published == []
+
+    client.fire_message('sensors/zone-a/SN-001/data', payload())
+    assert processor.stats['stored'] == 1
+
+
+class ExplodingStore(influx_store.InfluxStore):
+    """An InfluxStore whose first reading write raises an unexpected error."""
+
+    def __init__(self, client, database):
+        super(ExplodingStore, self).__init__(client, database)
+        self.exploded = False
+
+    def write_reading(self, data):
+        if not self.exploded:
+            self.exploded = True
+            raise RuntimeError('unexpected')
+        super(ExplodingStore, self).write_reading(data)
+
+
+def test_unexpected_error_is_logged_counted_and_does_not_stop_the_loop(caplog):
+    store = ExplodingStore(FakeInfluxClient(), 'industrial_iot')
+    processor, client, influx = make_processor(store)
+    with caplog.at_level(logging.ERROR, logger='data_processor'):
+        client.fire_message('sensors/zone-a/SN-001/data', payload())
+    assert 'Unexpected error' in caplog.text
+    assert 'RuntimeError' in caplog.text
+    assert processor.stats['errors'] == 1
+
+    client.fire_message('sensors/zone-a/SN-001/data', payload())
+    assert processor.stats['stored'] == 1
 
 
 def test_out_of_range_payload_is_rejected():

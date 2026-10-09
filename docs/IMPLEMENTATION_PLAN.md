@@ -36,7 +36,7 @@ This plan implements [SPEC.md](SPEC.md) in dependency order. Each task is one co
 - Create `tests/__init__.py`, `tests/unit/__init__.py` and `tests/unit/test_environment.py`.
 - Create `docker/grafana/Dockerfile` (the Hub `grafana/grafana` 4.x images are schema-1 and cannot be pulled):
   - `FROM debian:stretch-20171210@sha256:0a5fcee6f52d5170f557ee2447d7a10a5bdcf715dd7f0250be0b678c556a501b`;
-  - point `/etc/apt/sources.list` at `http://snapshot.debian.org/archive/debian/20171231T000000Z stretch main` and run apt with `-o Acquire::Check-Valid-Until=false`. The archive keys that signed this snapshot have since expired (`EXPKEYSIG`), so apt rejects the signature. `update` therefore also passes `-o Acquire::AllowInsecureRepositories=true` and `install` passes `--allow-unauthenticated`. apt still checks each package against the hashes in the downloaded `Release` file, and after the install the build fetches `Release.gpg` with `curl -fsSL` and verifies that `Release` file with `gpgv` against the keyrings in `/etc/apt/trusted.gpg.d/`; a bad signature fails the build;
+  - (superseded by T13, which replaces this unauthenticated apt step with verified package downloads) point `/etc/apt/sources.list` at `http://snapshot.debian.org/archive/debian/20171231T000000Z stretch main` and run apt with `-o Acquire::Check-Valid-Until=false`. The archive keys that signed this snapshot have since expired (`EXPKEYSIG`), so apt rejects the signature. `update` therefore also passes `-o Acquire::AllowInsecureRepositories=true` and `install` passes `--allow-unauthenticated`. apt still checks each package against the hashes in the downloaded `Release` file, and after the install the build fetches `Release.gpg` with `curl -fsSL` and verifies that `Release` file with `gpgv` against the keyrings in `/etc/apt/trusted.gpg.d/`; a bad signature fails the build;
   - `apt-get install -y --no-install-recommends adduser libfontconfig1 ca-certificates curl`;
   - download `https://s3-us-west-2.amazonaws.com/grafana-releases/release/grafana_4.6.3_amd64.deb`, check it with `echo "d022fceb939e7570d74b437932bee876e306b0e21ecdd830752c61b4e89dab31  grafana.deb" | sha256sum -c -`, then `dpkg -i grafana.deb` and delete it;
   - `EXPOSE 3000`, `USER grafana`, and run `grafana-server --homepath=/usr/share/grafana --config=/etc/grafana/grafana.ini cfg:default.paths.data=/var/lib/grafana cfg:default.paths.logs=/var/log/grafana`.
@@ -504,5 +504,32 @@ test it, and a layout generated from the tracked files.
 | T10 | T5, T6, T9 |
 | T11 | T8, T10 |
 | T12 | all of the above |
+| T13 | T12 |
 
-There are 12 tasks and 12 commits. `make test` is green after each one.
+There are 13 tasks and 13 commits. `make test` is green after each one.
+
+---
+
+## T13 — Security and hygiene hardening
+
+**Goal:** Review the whole repository for security, ops-correctness and hygiene problems and fix them test-first.
+
+**Found and changed:**
+- **Blocker: unauthenticated package install in the Grafana image.** `docker/grafana/Dockerfile` fetched stretch packages over plain HTTP with `Acquire::AllowInsecureRepositories=true` and `--allow-unauthenticated`, and only checked `Release.gpg` after the packages were already installed. Now a `debian:bookworm-slim` builder stage (run on the build platform) runs `docker/apt/fetch_debs.py`: over HTTPS only, it verifies `Release` against `Release.gpg` with `gpgv` using the current and removed Debian archive keyrings, with `faketime` at the snapshot date because the stretch keys have expired, and requires GOODSIG and VALIDSIG with no BADSIG, ERRSIG, EXPSIG, REVKEYSIG or NO_PUBKEY. It then checks `Packages.gz` against `Release` and each `.deb` against `Packages`. The packages are pinned in `docker/apt/packages.lock` (adduser, libfontconfig1, ca-certificates; `curl` is no longer installed in the image). Dependencies are resolved against the target image's dpkg status. The Grafana `.deb` is downloaded in the builder and checked with `sha256sum -c`. The final `debian:stretch-20171210` stage installs only those files with `dpkg`, deletes `/etc/apt/sources.list` and never runs apt. The compose `grafana` build context moved to the repo root so the builder can copy `docker/apt/`.
+- **Major: one malformed payload stopped the processor.** A data-topic payload whose `timestamp` the InfluxDB client cannot parse (for example `"garbage"`) raised `ValueError` inside paho's `on_message`, and paho 1.3 does not catch callback exceptions, so `loop_forever` ended. `readings.from_payload` now requires a UTC ISO 8601 timestamp (`YYYY-MM-DDTHH:MM:SS[.ffffff]Z`, real calendar date). `DataProcessor.on_message` also logs and counts (`stats['errors']`) any unexpected error instead of letting it end the loop.
+- **Major: unvalidated payload strings reached topics and line protocol.** `zone`, `gateway` and `sensor_id` from the payload went unchecked into InfluxDB tags (influxdb 4.1.1 does not escape newlines in tag values) and into `alerts/<zone>/<sensor_id>` topics, where `/`, `+` and `#` change the topic. They must now match `[A-Za-z0-9_-]{1,32}` (sensor id) and `[A-Za-z0-9_.-]{1,64}` (gateway and zone), anchored with `\Z` so a trailing newline does not pass. The gateway refuses to start with a configured id or zone outside that set.
+- **Major: services without authentication were published on every host interface.** Mosquitto (anonymous), InfluxDB (no auth) and Grafana (admin/admin) were reachable from the network on 20583, 20586 and 20530. The ports are now published on `127.0.0.1` only.
+- **Major: serial reads were unbounded and partial lines were parsed.** `readline()` without a limit grows without bound on a stream with no newline, and a line cut by the read timeout (`SN-001,22.0,45.0,0.1` from `...,0.12`) parsed as a valid reading with a wrong value. The gateway now reads at most `MAX_LINE_BYTES` (256) per call, joins chunks until the newline, and drops an overlong line whole up to its newline.
+- **Minor: credentials in Grafana import errors.** `scripts/grafana_import.py` printed the Grafana URL, including any `user:password@` userinfo, in its "not healthy" error. Errors now use `redact_url` (scheme, host and port; userinfo, path and query shown as `<redacted>`).
+- **Not changed, documented:** the broker accepts readings for any zone from any client that can reach it, and a sensor that stops sending (or only sends out-of-range values) raises no alert. Both are listed in SPEC known limitations and the README.
+- No era-performing comments, fabricated claims, AI mentions, `@author` tags or debug leftovers were found.
+
+**Tests written first (seen failing, then passing):**
+- `tests/unit/test_build_sources.py`: no Dockerfile or file under `docker/` contains `--allow-unauthenticated`, `--force-yes`, `trusted=yes`, `AllowUnauthenticated`, `AllowInsecureRepositories`, `--no-check-gpg` or `http://`; the final Grafana stage has no `apt-get`; `fetch_debs.py` refuses plain HTTP, reads only the Release SHA256 section, rejects tampered data, needs GOODSIG and VALIDSIG with no bad status, and reads installed packages from a dpkg status file; every published compose port is `127.0.0.1:205xx:<port>`.
+- `tests/unit/test_readings.py`: bad timestamps and identifiers with spaces, `/`, `+`, `#`, `,`, `=`, newlines or too many characters are rejected.
+- `tests/unit/test_data_processor.py`: payloads that the real line-protocol encoder cannot encode are rejected without raising, and the next payload is stored; an unexpected store error is logged, counted and does not stop processing.
+- `tests/unit/test_sensor_gateway.py`: a line split across reads is reassembled; an overlong line is dropped whole and every read is bounded; invalid gateway id or zone is refused.
+- `tests/unit/test_grafana_import.py`: `redact_url`, and a sentinel password in the URL and `--password` never appears in logs or output on connection refused, 401 or 500.
+
+**Acceptance:** `make test`; `make up`, `make smoke` with readings from both zones, then `make down`. The image build itself shows "Release signature verified", and a run with an empty keyring fails.
+

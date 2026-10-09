@@ -9,17 +9,18 @@ Personal project built on the 2017-era stack (Python 3.5, paho-mqtt 1.3, InfluxD
 **Implemented**
 
 - Arduino sensor-node sketch: DHT22 and ADXL345 (±16 g full resolution) read every 5 s, CSV output, invalid DHT reads skipped, status LED — `arduino/sensor_node.ino`, `arduino/sensor_logic.h`; tested by `tests/arduino/test_sensor_node.cpp`.
-- Reading protocol: CSV line parsing with comment lines ignored, range validation and the MQTT JSON payload — `src/readings.py`; tested by `tests/unit/test_readings.py`.
+- Reading protocol: CSV line parsing with comment lines ignored, range validation and the MQTT JSON payload; incoming payloads must carry a UTC ISO 8601 timestamp and gateway, zone and sensor ids from a fixed character set, so they cannot break MQTT topics or InfluxDB line protocol — `src/readings.py`; tested by `tests/unit/test_readings.py`.
 - Node simulator: TCP server emitting the sketch's line format with seeded `normal`, `overheat`, `humid`, `vibration-drift` and `dropout` profiles plus an optional `--noise` rate — `src/node_simulator.py`; tested by `tests/unit/test_node_simulator.py`.
-- Sensor gateway: reads a pyserial URL, stamps readings with UTC time, gateway and zone, publishes QoS 1 to `sensors/<zone>/<sensor_id>/data` and reconnects with backoff — `src/sensor_gateway.py`; tested by `tests/unit/test_sensor_gateway.py` and `tests/integration/test_gateway_mqtt.py`.
+- Sensor gateway: reads a pyserial URL, stamps readings with UTC time, gateway and zone, publishes QoS 1 to `sensors/<zone>/<sensor_id>/data` and reconnects with backoff; a line split by a read timeout is joined before parsing and lines over 256 bytes are dropped whole — `src/sensor_gateway.py`; tested by `tests/unit/test_sensor_gateway.py` and `tests/integration/test_gateway_mqtt.py`.
 - Configuration: INI files with environment-variable overrides — `src/config.py`, `config/gateway.ini`, `config/processor.ini`; tested by `tests/unit/test_config.py` and `tests/unit/test_gateway_config.py`.
 - Alert engine: edge-triggered threshold alerts for temperature, humidity and vibration, and a rolling-mean vibration trend warning — `src/alerts.py`; tested by `tests/unit/test_alerts.py`.
 - InfluxDB storage: database creation, `raw` (7 d, default) and `rollup` (52 w) retention policies, a 1-minute downsampling continuous query, reading and alert points — `src/influx_store.py`; tested by `tests/unit/test_influx_store.py` and `tests/integration/test_influx_store.py`.
-- Data processor: subscribes to sensor topics, validates and stores readings, runs the alert engine, publishes alerts with QoS 2 and stores them, counts bad payloads — `src/data_processor.py`; tested by `tests/unit/test_data_processor.py` and `tests/integration/test_processor.py`.
+- Data processor: subscribes to sensor topics, validates and stores readings, runs the alert engine, publishes alerts with QoS 2 and stores them, counts bad payloads, and logs and counts any other error without stopping the MQTT loop — `src/data_processor.py`; tested by `tests/unit/test_data_processor.py` and `tests/integration/test_processor.py`.
 - Multi-zone Compose stack: Mosquitto 1.4.12, InfluxDB 1.3.8, Grafana 4.6.3, two simulator and gateway pairs (`zone-a`, `zone-b`) and one processor — `docker-compose.yml`; tested end to end by `tests/integration/test_pipeline.py`.
 - Broker and database config mounted into the images — `config/mosquitto.conf`, `config/influxdb.conf`; exercised by the integration tests above.
-- Grafana dashboard with per-zone temperature, humidity and vibration graphs, the 1-minute rollup and an alerts table, loaded through the Grafana HTTP API — `grafana/dashboard.json`, `scripts/grafana_import.py`; tested by `tests/unit/test_dashboard.py` and `tests/integration/test_grafana_import.py`.
+- Grafana dashboard with per-zone temperature, humidity and vibration graphs, the 1-minute rollup and an alerts table, loaded through the Grafana HTTP API; the import script prints the Grafana URL without credentials — `grafana/dashboard.json`, `scripts/grafana_import.py`; tested by `tests/unit/test_dashboard.py`, `tests/unit/test_grafana_import.py` and `tests/integration/test_grafana_import.py`.
 - Test harness: lint, unit, host-compiled sketch and container integration tests inside the `python:3.5.4-jessie` image — `Dockerfile`, `Makefile`; tested by `tests/unit/test_environment.py`.
+- Verified Grafana image packages: a builder stage downloads the stretch packages over HTTPS from the 2017-12-31 snapshot, checks the Release signature with `gpgv` against the current and removed Debian archive keys, then the `Packages` checksum and each `.deb` checksum; the period image installs only those files with `dpkg` and keeps no apt sources. The Compose stack publishes its ports on 127.0.0.1 only — `docker/grafana/Dockerfile`, `docker/apt/fetch_debs.py`, `docker/apt/packages.lock`, `docker-compose.yml`; tested by `tests/unit/test_build_sources.py`.
 
 **Not implemented / known limitations**
 
@@ -30,14 +31,15 @@ Personal project built on the 2017-era stack (Python 3.5, paho-mqtt 1.3, InfluxD
 - No energy-saving or environmental optimisation; there is no HVAC or actuator control.
 - No machine-learning or statistical failure prediction; the early warning is a fixed rolling-mean vibration threshold, not a learned model.
 - No Grafana alerting or notification channels (email, Slack); alerts go to MQTT topics and InfluxDB only.
-- No MQTT or InfluxDB authentication or TLS, and Grafana uses its default admin credentials. This is a local demo stack.
+- No MQTT or InfluxDB authentication or TLS, and Grafana uses its default admin credentials. This is a local demo stack, and its ports are published on 127.0.0.1 only. Any client that can reach the broker can publish readings for any zone: the processor validates payloads but does not authenticate senders.
+- A sensor that stops sending raises no alert: rules only evaluate readings that arrive, and readings outside the sensor limits are dropped as sensor faults rather than alerted.
 - No durable store-and-forward buffering on the gateway: readings are lost while the broker is unreachable beyond paho's in-memory queue, and the processor logs failed InfluxDB writes without retrying them.
 - No gateway command topic; the old unhandled `commands` subscription was removed.
 - Alert state lives in processor memory and resets on restart.
 - Vibration magnitude assumes the ADXL345 is mounted Z-up (1 g is subtracted from Z).
 - Grafana 4.x has no file provisioning, so the dashboard is loaded by a one-shot import script (`grafana-init` service).
 - Mosquitto 1.4.12 and the Grafana 4.6.3 `.deb` are amd64-only, so those two services run under emulation on ARM hosts.
-- Grafana is not the upstream Docker image: the official 4.6.3 `.deb` is installed on `debian:stretch-20171210` (`docker/grafana/Dockerfile`), because the upstream 4.x images can no longer be pulled.
+- Grafana is not the upstream Docker image: the official 4.6.3 `.deb` is installed on `debian:stretch-20171210` (`docker/grafana/Dockerfile`), because the upstream 4.x images can no longer be pulled. Its package verification runs in a current `debian:bookworm-slim` builder stage, because the stretch signing keys have expired and need the removed-keys keyring and a clock set to the snapshot date.
 - The continuous query firing is not tested (it needs a wall-clock minute); its existence and SQL are.
 
 ## Built with
@@ -45,7 +47,7 @@ Personal project built on the 2017-era stack (Python 3.5, paho-mqtt 1.3, InfluxD
 - **Python 3.5.4** (`python:3.5.4-jessie` image) — paho-mqtt 1.3.0, influxdb 4.1.1, pyserial 3.4, requests 2.18.4, urllib3 1.22, chardet 3.0.4, idna 2.6, certifi 2017.11.5, python-dateutil 2.6.1, pytz 2017.3, six 1.11.0
 - **Test tools** — pytest 3.3.1, py 1.5.2, pluggy 0.6.0, attrs 17.3.0, flake8 3.5.0, pyflakes 1.6.0, pycodestyle 2.3.1, mccabe 0.6.1
 - **Arduino C++** — sketch for DHT22 and ADXL345 (Wire/I2C), host-compiled with g++ for tests
-- **Services** — `eclipse-mosquitto:1.4.12`, `influxdb:1.3.8` (both pinned by digest), Grafana 4.6.3 built from the official `.deb` on `debian:stretch-20171210`
+- **Services** — `eclipse-mosquitto:1.4.12`, `influxdb:1.3.8` (both pinned by digest), Grafana 4.6.3 built from the official `.deb` on `debian:stretch-20171210` with signature-checked stretch packages
 
 ## Running it
 
@@ -56,7 +58,7 @@ make up                  # docker compose up -d --build: broker, InfluxDB, Grafa
 make smoke               # latest temperature and vibration per zone and sensor from InfluxDB
 ```
 
-`make up` runs `$(COMPOSE) up -d --build` with `COMPOSE ?= docker compose` (use `make up COMPOSE=docker-compose` for the standalone binary). Host ports: Mosquitto 20583, InfluxDB 20586, Grafana 20530 (admin/admin, dashboard "Industrial IoT Floor"). `make down` stops the stack.
+`make up` runs `$(COMPOSE) up -d --build` with `COMPOSE ?= docker compose` (use `make up COMPOSE=docker-compose` for the standalone binary). Host ports, on 127.0.0.1 only: Mosquitto 20583, InfluxDB 20586, Grafana 20530 (admin/admin, dashboard "Industrial IoT Floor"). `make down` stops the stack.
 
 ## Tests
 
@@ -85,6 +87,9 @@ config/
 conftest.py
 docker-compose.yml
 docker/
+  apt/
+    fetch_debs.py
+    packages.lock
   grafana/
     Dockerfile
 docs/
@@ -126,11 +131,13 @@ tests/
   unit/
     __init__.py
     test_alerts.py
+    test_build_sources.py
     test_config.py
     test_dashboard.py
     test_data_processor.py
     test_environment.py
     test_gateway_config.py
+    test_grafana_import.py
     test_influx_store.py
     test_node_simulator.py
     test_readings.py

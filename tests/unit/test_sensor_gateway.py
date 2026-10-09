@@ -123,7 +123,7 @@ class BrokenPort(object):
     def __init__(self):
         self.closed = False
 
-    def readline(self):
+    def readline(self, size=-1):
         raise serial.SerialException('device reports readiness to read but returned no data')
 
     def close(self):
@@ -166,6 +166,72 @@ def test_failed_reconnects_back_off_with_growing_delay():
     assert rec.sleeps == sorted(rec.sleeps)
     assert rec.sleeps[-1] > rec.sleeps[0]
     assert max(rec.sleeps) <= sensor_gateway.MAX_BACKOFF
+
+
+class ScriptedPort(object):
+    """A serial port that returns scripted chunks, one per readline call.
+
+    Each chunk is what pyserial returns when its read timeout expires or the
+    size limit is reached before a newline. The port checks that every call
+    passes a positive size limit no larger than the chunk it returns needs.
+    """
+
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+        self.sizes = []
+
+    def readline(self, size=-1):
+        self.sizes.append(size)
+        assert size is not None and size > 0, 'readline called without a size limit'
+        if not self.chunks:
+            return b''
+        chunk = self.chunks.pop(0)
+        assert len(chunk) <= size
+        return chunk
+
+    def close(self):
+        pass
+
+
+def run_scripted(chunks, max_readings):
+    port = ScriptedPort(chunks)
+    rec = Recorder()
+    gw = make_gateway(rec, lambda url, **kwargs: port)
+    assert gw.run(max_readings=max_readings) == max_readings
+    return port, [json.loads(m.payload) for m in rec.clients[0].published]
+
+
+def test_line_split_by_a_read_timeout_is_reassembled_before_parsing():
+    # Without reassembly the first chunk parses as a valid reading with
+    # vibration 0.1 instead of 0.12.
+    _, published = run_scripted([b'SN-001,22.0,45.0,0.1', b'', b'2\r\n',
+                                 b'SN-001,22.1,45.1,0.11\r\n'], 2)
+    assert [p['vibration'] for p in published] == [0.12, 0.11]
+
+
+def test_overlong_line_is_dropped_whole_and_reads_stay_bounded():
+    limit = sensor_gateway.MAX_LINE_BYTES
+    junk = b'X' * (limit * 3)
+    chunks = [junk[i:i + limit] for i in range(0, len(junk), limit)]
+    # The tail of the overlong line would parse as a reading if kept.
+    chunks += [b'SN-001,22.0,45.0,0.10\r\n', b'SN-001,22.1,45.1,0.11\r\n']
+    port, published = run_scripted(chunks, 1)
+    assert [p['temperature'] for p in published] == [22.1]
+    assert max(port.sizes) <= limit
+
+
+@pytest.mark.parametrize('section,key,value', [
+    ('gateway', 'zone', 'zone/a'),
+    ('gateway', 'zone', 'zone+'),
+    ('gateway', 'id', 'gw a'),
+    ('gateway', 'id', ''),
+])
+def test_gateway_refuses_ids_that_cannot_be_used_in_topics(section, key, value):
+    cfg = make_cfg()
+    cfg[section][key] = value
+    with pytest.raises(ValueError):
+        sensor_gateway.SensorGateway(cfg, mqtt_factory=FakeMqttClient,
+                                     serial_factory=lambda *a, **k: None)
 
 
 def test_backoff_is_capped():

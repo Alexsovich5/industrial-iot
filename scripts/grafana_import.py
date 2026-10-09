@@ -3,6 +3,9 @@
 Grafana 4.x has no file provisioning, so both are pushed through the HTTP
 API. Running the script again is safe: an existing datasource (HTTP 409) is
 left as it is and the dashboard is saved with ``overwrite``.
+
+Log lines and errors show the Grafana URL through ``redact_url``, so
+credentials or tokens embedded in it are never printed.
 """
 
 import argparse
@@ -10,6 +13,7 @@ import json
 import logging
 import sys
 import time
+from urllib.parse import urlsplit
 
 import requests
 
@@ -21,6 +25,18 @@ log = logging.getLogger('grafana_import')
 
 class GrafanaError(Exception):
     """Raised when Grafana rejects a request."""
+
+
+def redact_url(url):
+    """Return ``scheme://host[:port]`` with userinfo, path and query hidden."""
+    parts = urlsplit(url)
+    host = parts.hostname or ''
+    if parts.port is not None:
+        host = '{}:{}'.format(host, parts.port)
+    if parts.username is not None or parts.password is not None:
+        host = '<redacted>@' + host
+    tail = '/<redacted>' if parts.path.strip('/') or parts.query or parts.fragment else ''
+    return '{}://{}{}'.format(parts.scheme, host, tail)
 
 
 def build_parser():
@@ -52,7 +68,7 @@ def wait_for_health(session, url, timeout, interval=2.0):
             last_error = exc
         if time.time() >= deadline:
             raise GrafanaError('Grafana at {} not healthy after {}s: {}'.format(
-                url, timeout, last_error))
+                redact_url(url), timeout, last_error))
         log.info('waiting for Grafana: %s', last_error)
         time.sleep(interval)
 
