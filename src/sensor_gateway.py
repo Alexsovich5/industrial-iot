@@ -11,6 +11,7 @@ import time
 import serial
 import logging
 import paho.mqtt.client as mqtt
+import readings
 from influxdb import InfluxDBClient
 from datetime import datetime
 
@@ -80,7 +81,7 @@ class SensorGateway:
     def _on_mqtt_connect(self, client, userdata, flags, rc):
         if rc == 0:
             logger.info("Connected to MQTT broker")
-            client.subscribe(f"gateways/{self.gateway_id}/commands")
+            client.subscribe("gateways/{}/commands".format(self.gateway_id))
         else:
             logger.error("MQTT connection failed: rc=%d", rc)
 
@@ -95,41 +96,24 @@ class SensorGateway:
         """Main data collection loop."""
         while True:
             try:
-                line = self.serial_conn.readline().decode('utf-8').strip()
-                if not line:
+                line = self.serial_conn.readline().decode('utf-8')
+                parsed = readings.parse_line(line)
+                if parsed is None:
                     continue
 
-                reading = self._parse_reading(line)
-                if reading:
-                    self._publish_mqtt(reading)
-                    self._store_influxdb(reading)
-                    self._check_thresholds(reading)
+                reading = dict(parsed._asdict())
+                reading['timestamp'] = datetime.utcnow().isoformat() + 'Z'
+                self._publish_mqtt(reading)
+                self._store_influxdb(reading)
+                self._check_thresholds(reading)
 
             except Exception as e:
                 logger.error("Processing error: %s", e)
                 time.sleep(1)
 
-    def _parse_reading(self, raw_line):
-        """Parse Arduino sensor reading (CSV format)."""
-        try:
-            parts = raw_line.split(',')
-            if len(parts) < 4:
-                return None
-
-            return {
-                'sensor_id': parts[0].strip(),
-                'temperature': float(parts[1]),
-                'humidity': float(parts[2]),
-                'vibration': float(parts[3]),
-                'timestamp': datetime.utcnow().isoformat()
-            }
-        except (ValueError, IndexError) as e:
-            logger.debug("Parse error: %s - %s", raw_line, e)
-            return None
-
     def _publish_mqtt(self, reading):
         """Publish sensor reading to MQTT."""
-        topic = f"sensors/{self.zone}/{reading['sensor_id']}/data"
+        topic = "sensors/{}/{}/data".format(self.zone, reading['sensor_id'])
         payload = json.dumps(reading)
         self.mqtt_client.publish(topic, payload, qos=1)
 
@@ -154,11 +138,11 @@ class SensorGateway:
         """Check readings against alert thresholds."""
         alerts = []
         if reading['temperature'] > self.thresholds['temperature_max']:
-            alerts.append(f"High temperature: {reading['temperature']}C")
+            alerts.append("High temperature: {}C".format(reading['temperature']))
         if reading['humidity'] > self.thresholds['humidity_max']:
-            alerts.append(f"High humidity: {reading['humidity']}%")
+            alerts.append("High humidity: {}%".format(reading['humidity']))
         if reading['vibration'] > self.thresholds['vibration_max']:
-            alerts.append(f"High vibration: {reading['vibration']}g")
+            alerts.append("High vibration: {}g".format(reading['vibration']))
 
         for alert_msg in alerts:
             alert = {
@@ -168,7 +152,7 @@ class SensorGateway:
                 'message': alert_msg,
                 'timestamp': reading['timestamp']
             }
-            topic = f"alerts/{self.zone}/{reading['sensor_id']}"
+            topic = "alerts/{}/{}".format(self.zone, reading['sensor_id'])
             self.mqtt_client.publish(topic, json.dumps(alert), qos=2)
             logger.warning("ALERT: %s", alert_msg)
 

@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: build test up down smoke check unit
+.PHONY: build test up down smoke check lint unit
 
 # Host targets (run Docker)
 
@@ -22,7 +22,11 @@ smoke:
 
 # In-container targets (run inside the tests image)
 
-check: unit
+check: lint unit
+
+lint:
+	flake8 src tests
+	python -m compileall -q src
 
 unit:
 	python -m pytest tests/unit
