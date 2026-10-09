@@ -339,8 +339,8 @@ idempotently and write reading and alert points with zone tags.
   - `DataProcessor(cfg, mqtt_client, store, engine)`;
   - `on_connect`, which subscribes to `sensors/+/+/data` with qos 1;
   - `on_message`, which parses the payload with `readings.from_payload`, checks it with `validate`, writes it with `store.write_reading`, passes it to `engine.evaluate`, and for each event publishes `alerts/<zone>/<sensor_id>` with qos 2 and calls `store.write_alert`;
-  - `stats` counters (`received`, `stored`, `rejected`, `alerts`);
-  - handling for InfluxDB write errors, which are logged and counted without crashing the loop;
+  - `stats` counters (`received`, `stored`, `rejected`, `alerts`, `write_errors`);
+  - handling for InfluxDB write errors, which are logged and counted in `write_errors` without crashing the loop;
   - a `main()` that uses argparse and `config.load` and calls `ensure_schema()` with retry until InfluxDB is up.
 - Create `tests/unit/test_data_processor.py` and `tests/integration/test_processor.py`.
 
