@@ -234,7 +234,7 @@ without an Arduino attached.
 
 **Files:**
 - Modify `src/sensor_gateway.py`:
-  - Change the constructor to `SensorGateway(cfg, mqtt_factory=paho Client, serial_factory=serial.serial_for_url, clock=datetime.utcnow)`.
+  - Change the constructor to `SensorGateway(cfg, mqtt_factory=paho Client, serial_factory=serial.serial_for_url, clock=datetime.utcnow, sleep=time.sleep)`. `sleep` is injected so unit tests can check the reset delay and the reconnect backoff (1 s doubling to 30 s) without waiting. The serial URL attribute is `serial_url`.
   - Add `process_line(line)` and `run(max_readings=None)`.
   - Remove the InfluxDB client, `_ensure_database`, `_check_thresholds` and the `commands` subscription.
   - Keep the 2 s Arduino reset delay only for `/dev/` URLs.

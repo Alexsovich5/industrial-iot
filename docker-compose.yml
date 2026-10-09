@@ -36,6 +36,9 @@ services:
     image: industrial-iot:tests
     volumes:
       - .:/app
+    environment:
+      - MQTT_HOST=mosquitto
+      - INFLUXDB_HOST=influxdb
     depends_on:
       - mosquitto
       - influxdb

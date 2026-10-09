@@ -25,7 +25,7 @@ def test_gateway_reads_settings_from_loaded_config():
     gateway = sensor_gateway.SensorGateway(cfg)
     assert gateway.gateway_id == 'gw-b'
     assert gateway.zone == 'zone-a'
-    assert gateway.serial_port == 'socket://simulator-b:7000'
+    assert gateway.serial_url == 'socket://simulator-b:7000'
     assert gateway.baud_rate == 9600
     assert gateway.serial_timeout == 5
     assert gateway.mqtt_host == 'mosquitto'
