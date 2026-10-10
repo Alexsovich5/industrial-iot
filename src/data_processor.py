@@ -7,7 +7,8 @@ writes valid readings to InfluxDB through ``InfluxStore`` and runs them
 through the ``AlertEngine``. Each alert event is published with QoS 2 to
 ``alerts/<zone>/<sensor_id>`` and written to the ``alerts`` measurement.
 
-Bad payloads are logged and counted as rejected. InfluxDB write errors
+Bad payloads, including any larger than ``readings.MAX_PAYLOAD_BYTES``,
+are logged and counted as rejected. InfluxDB write errors
 and any other error while handling a message are logged and counted;
 they never stop the MQTT loop.
 """
@@ -131,6 +132,10 @@ class DataProcessor(object):
     # Helpers
 
     def _parse(self, msg):
+        if len(msg.payload) > readings.MAX_PAYLOAD_BYTES:
+            logger.warning('Rejected %d-byte payload on %s: limit is %d bytes',
+                           len(msg.payload), msg.topic, readings.MAX_PAYLOAD_BYTES)
+            return None
         try:
             text = msg.payload.decode('utf-8')
             data = readings.from_payload(text)

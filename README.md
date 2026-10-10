@@ -15,12 +15,12 @@ Personal project built on the 2017-era stack (Python 3.5, paho-mqtt 1.3, InfluxD
 - Configuration: INI files with environment-variable overrides — `src/config.py`, `config/gateway.ini`, `config/processor.ini`; tested by `tests/unit/test_config.py` and `tests/unit/test_gateway_config.py`.
 - Alert engine: edge-triggered threshold alerts for temperature, humidity and vibration, and a rolling-mean vibration trend warning — `src/alerts.py`; tested by `tests/unit/test_alerts.py`.
 - InfluxDB storage: database creation, `raw` (7 d, default) and `rollup` (52 w) retention policies, a 1-minute downsampling continuous query, reading and alert points — `src/influx_store.py`; tested by `tests/unit/test_influx_store.py` and `tests/integration/test_influx_store.py`.
-- Data processor: subscribes to sensor topics, validates and stores readings, runs the alert engine, publishes alerts with QoS 2 and stores them, counts bad payloads, and logs and counts any other error without stopping the MQTT loop — `src/data_processor.py`; tested by `tests/unit/test_data_processor.py` and `tests/integration/test_processor.py`.
+- Data processor: subscribes to sensor topics, validates and stores readings, runs the alert engine, publishes alerts with QoS 2 and stores them, rejects and counts bad payloads (including any over 1024 bytes, before parsing), and logs and counts any other error without stopping the MQTT loop — `src/data_processor.py`; tested by `tests/unit/test_data_processor.py` and `tests/integration/test_processor.py`.
 - Multi-zone Compose stack: Mosquitto 1.4.12, InfluxDB 1.3.8, Grafana 4.6.3, two simulator and gateway pairs (`zone-a`, `zone-b`) and one processor — `docker-compose.yml`; tested end to end by `tests/integration/test_pipeline.py`.
-- Broker and database config mounted into the images — `config/mosquitto.conf`, `config/influxdb.conf`; exercised by the integration tests above.
+- Broker and database config mounted into the images; the broker drops messages over 4096 bytes — `config/mosquitto.conf`, `config/influxdb.conf`; tested by `tests/integration/test_broker_limits.py` and exercised by the integration tests above.
 - Grafana dashboard with per-zone temperature, humidity and vibration graphs, the 1-minute rollup and an alerts table, loaded through the Grafana HTTP API; the import script prints the Grafana URL without credentials — `grafana/dashboard.json`, `scripts/grafana_import.py`; tested by `tests/unit/test_dashboard.py`, `tests/unit/test_grafana_import.py` and `tests/integration/test_grafana_import.py`.
 - Test harness: lint, unit, host-compiled sketch and container integration tests inside the `python:3.5.4-jessie` image — `Dockerfile`, `Makefile`; tested by `tests/unit/test_environment.py`.
-- Verified Grafana image packages: a builder stage downloads the stretch packages over HTTPS from the 2017-12-31 snapshot, checks the Release signature with `gpgv` against the current and removed Debian archive keys, then the `Packages` checksum and each `.deb` checksum; the period image installs only those files with `dpkg` and keeps no apt sources. The Compose stack publishes its ports on 127.0.0.1 only — `docker/grafana/Dockerfile`, `docker/apt/fetch_debs.py`, `docker/apt/packages.lock`, `docker-compose.yml`; tested by `tests/unit/test_build_sources.py`.
+- Verified Grafana image packages: a builder stage downloads the stretch packages over HTTPS from the 2017-12-31 snapshot, checks the Release signature with `gpgv` against the current and removed Debian archive keys, then the `Packages` checksum and each `.deb` checksum; the period image installs only those files with `dpkg` and keeps no apt sources. The Compose stack publishes its ports on 127.0.0.1 only, and `make test` first renders the compose config and fails if any published port is on another address or outside 20500–20599 — `docker/grafana/Dockerfile`, `docker/apt/fetch_debs.py`, `docker/apt/packages.lock`, `docker-compose.yml`, `scripts/check_ports.py`, `Makefile`; tested by `tests/unit/test_build_sources.py` and `tests/unit/test_check_ports.py`.
 
 **Not implemented / known limitations**
 
@@ -31,7 +31,8 @@ Personal project built on the 2017-era stack (Python 3.5, paho-mqtt 1.3, InfluxD
 - No energy-saving or environmental optimisation; there is no HVAC or actuator control.
 - No machine-learning or statistical failure prediction; the early warning is a fixed rolling-mean vibration threshold, not a learned model.
 - No Grafana alerting or notification channels (email, Slack); alerts go to MQTT topics and InfluxDB only.
-- No MQTT or InfluxDB authentication or TLS, and Grafana uses its default admin credentials. This is a local demo stack, and its ports are published on 127.0.0.1 only. Any client that can reach the broker can publish readings for any zone: the processor validates payloads but does not authenticate senders.
+- Loopback-only lab software: no MQTT or InfluxDB authentication or TLS, and Grafana uses its default admin credentials. Do not publish its ports beyond 127.0.0.1. Any client that can reach the broker can publish readings for any zone: the processor validates payloads but does not authenticate senders.
+- The processor keeps alert state for every zone and sensor id it has seen and never evicts it, so a client publishing endless distinct ids grows its memory.
 - A sensor that stops sending raises no alert: rules only evaluate readings that arrive, and readings outside the sensor limits are dropped as sensor faults rather than alerted.
 - No durable store-and-forward buffering on the gateway: readings are lost while the broker is unreachable beyond paho's in-memory queue, and the processor logs failed InfluxDB writes without retrying them.
 - No gateway command topic; the old unhandled `commands` subscription was removed.
@@ -63,8 +64,10 @@ make smoke               # latest temperature and vibration per zone and sensor 
 ## Tests
 
 ```bash
-make test                # runs the suite inside the period image
+make test                # port check, then the suite inside the period image
 ```
+
+`make test` runs `make ports` first, which pipes `docker compose config --format json` (Compose v2) into `scripts/check_ports.py`.
 
 The suite covers unit tests, host-compiled tests of the Arduino sketch against fake headers, and integration tests against real Mosquitto, InfluxDB and Grafana containers; real hardware, serial timing and the continuous query actually executing are not covered.
 
@@ -101,6 +104,7 @@ requirements-dev.txt
 requirements.txt
 scripts/
   __init__.py
+  check_ports.py
   grafana_import.py
 setup.cfg
 src/
@@ -123,6 +127,7 @@ tests/
   integration/
     __init__.py
     conftest.py
+    test_broker_limits.py
     test_gateway_mqtt.py
     test_grafana_import.py
     test_influx_store.py
@@ -132,6 +137,7 @@ tests/
     __init__.py
     test_alerts.py
     test_build_sources.py
+    test_check_ports.py
     test_config.py
     test_dashboard.py
     test_data_processor.py

@@ -10,6 +10,7 @@ from influxdb.exceptions import InfluxDBServerError
 import alerts
 import data_processor
 import influx_store
+import readings
 from tests.fakes import FakeInfluxClient, FakeMqttClient
 
 CFG = {
@@ -137,6 +138,26 @@ def test_malformed_payload_is_rejected_and_nothing_written(body):
     assert processor.stats['received'] == 1
     assert processor.stats['rejected'] == 1
     assert processor.stats['stored'] == 0
+
+
+def test_oversized_payload_is_rejected_before_it_is_parsed(monkeypatch):
+    parsed = []
+    real_from_payload = data_processor.readings.from_payload
+
+    def recording_from_payload(text):
+        parsed.append(len(text))
+        return real_from_payload(text)
+
+    monkeypatch.setattr(data_processor.readings, 'from_payload', recording_from_payload)
+    processor, client, influx = make_processor()
+    body = payload(padding='x' * readings.MAX_PAYLOAD_BYTES).encode('utf-8')
+    client.fire_message('sensors/zone-a/SN-001/data', body)
+    assert parsed == []
+    assert influx.points == []
+    assert processor.stats['rejected'] == 1
+
+    client.fire_message('sensors/zone-a/SN-001/data', payload().encode('utf-8'))
+    assert processor.stats['stored'] == 1
 
 
 class LineProtocolInfluxClient(FakeInfluxClient):

@@ -505,8 +505,9 @@ test it, and a layout generated from the tracked files.
 | T11 | T8, T10 |
 | T12 | all of the above |
 | T13 | T12 |
+| T14 | T13 |
 
-There are 13 tasks and 13 commits. `make test` is green after each one.
+There are 14 tasks and 14 commits. `make test` is green after each one.
 
 ---
 
@@ -533,3 +534,23 @@ There are 13 tasks and 13 commits. `make test` is green after each one.
 
 **Acceptance:** `make test`; `make up`, `make smoke` with readings from both zones, then `make down`. The image build itself shows "Release signature verified", and a run with an empty keyring fails.
 
+---
+
+## T14 — Security and hygiene hardening
+
+**Goal:** Second whole-repository review, including the required post-batch fixes that name this repository (published ports and unauthenticated services).
+
+**Found and changed:**
+- **Blocker (post-batch item 23): the loopback-only port rule was checked only against the raw compose text.** `tests/unit/test_build_sources.py` scanned `docker-compose.yml` lines, so a port added through an anchor, an override file or a profile would not be seen. New `scripts/check_ports.py` reads `docker compose --profile test config --format json` and fails if any service publishes a port whose `host_ip` is not `127.0.0.1`, has no fixed host port, is outside 20500–20599, or uses `network_mode: host`. The new host target `make ports` pipes the rendered config into it inside the tests image, and `make test` runs it before the suite. The existing ports are already `127.0.0.1:20583`, `:20586` and `:20530`.
+- **Blocker (post-batch item 23): unauthenticated services.** Mosquitto (anonymous), InfluxDB (no auth) and Grafana (admin/admin) keep their period defaults; README and SPEC now state that this is loopback-only lab software whose ports must not be published beyond 127.0.0.1.
+- **Major (post-batch item 3 review of MQTT readers): unbounded MQTT payloads.** The broker accepted messages of any size and the processor decoded and parsed each one with `json.loads`. `config/mosquitto.conf` now sets `message_size_limit 4096`, and `DataProcessor` rejects (and counts) data payloads over `readings.MAX_PAYLOAD_BYTES` (1024; the largest valid payload is 308 bytes) before decoding them.
+- **Minor, documented, not changed:** the alert engine keeps state for every `(zone, sensor_id)` it sees, so an unauthenticated publisher sending endless distinct ids grows processor memory. Listed in README and SPEC limitations.
+- Secrets audit (post-batch item 10): the only credential is the documented Grafana lab default; `grafana_import.py` already redacts URLs in errors (T13) and no other log line formats a credential. No era-performing comments, fabricated claims, AI mentions, `@author` tags or debug leftovers were found.
+
+**Tests written first (seen failing, then passing):**
+- `tests/unit/test_check_ports.py`: loopback ports in range pass; a bare `20583:1883` (no `host_ip`), `0.0.0.0`, `::`, a LAN address, a random or empty host port, a port outside the range and a port range crossing it are each reported; `network_mode: host` is reported; `main` exits 1 naming the service, 0 for a safe config and 1 for a config without services.
+- `tests/unit/test_data_processor.py`: a payload over the cap is rejected without being parsed and the next valid payload is stored.
+- `tests/unit/test_readings.py`: the largest valid payload fits under `MAX_PAYLOAD_BYTES`.
+- `tests/integration/test_broker_limits.py`: a 64 KiB publish is not delivered by Mosquitto while a 100-byte one is.
+
+**Acceptance:** `make test` (runs `make ports` first); `make up`, `make smoke` with readings from both zones, then `make down`.

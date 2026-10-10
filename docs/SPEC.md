@@ -35,9 +35,9 @@ This repo rebuilds that pipeline as a working, tested solo project. It runs enti
 9. **Multi-zone Compose stack** (`docker-compose.yml`):
    - Mosquitto 1.4.12, InfluxDB 1.3.8 and Grafana 4.6.3. Grafana is built locally (`docker/grafana/Dockerfile`) from the official 4.6.3 `.deb` on `debian:stretch-20171210`, because every Grafana 4.x image on Docker Hub is a schema-1 manifest that current Docker cannot pull.
    - Two simulator and gateway pairs (`zone-a`, `zone-b`) and one processor.
-   - Compose project `industrial-iot` on network `172.45.0.0/24`. Host ports, published on 127.0.0.1 only because broker and database have no authentication: Mosquitto 20583, InfluxDB 20586, Grafana 20530; inside the network services use their standard ports (1883, 8086, 3000).
+   - Compose project `industrial-iot` on network `172.45.0.0/24`. Host ports, published on 127.0.0.1 only because broker and database have no authentication: Mosquitto 20583, InfluxDB 20586, Grafana 20530; inside the network services use their standard ports (1883, 8086, 3000). `make test` renders the compose config first and fails if any published port is not on 127.0.0.1 in 20500–20599 (`scripts/check_ports.py`).
    - This covers "real-time floor monitoring across production zones".
-10. **Broker and database config** (`config/mosquitto.conf`, `config/influxdb.conf`), mounted into the period images.
+10. **Broker and database config** (`config/mosquitto.conf`, `config/influxdb.conf`), mounted into the period images. The broker drops messages over 4096 bytes (`message_size_limit`), and the processor rejects data payloads over 1024 bytes before parsing them.
 11. **Grafana dashboard** (`grafana/dashboard.json`, schemaVersion 14, InfluxDB datasource). It has panels for temperature, humidity and vibration per zone and sensor, the 1-minute rollup, and an alerts table. `scripts/grafana_import.py` loads the datasource and dashboard through the Grafana 4.6 HTTP API, because file provisioning only arrived in Grafana 5.0. The datasource is named `industrial_iot` (the `--datasource-name` default), and every panel in `dashboard.json` references that exact name.
 12. **Test harness**. `make test` runs flake8, pytest unit tests, the host-compiled Arduino sketch tests and integration tests against the real Mosquitto, InfluxDB and Grafana containers. All of it runs inside the `python:3.5.4-jessie` image.
 
@@ -328,7 +328,8 @@ Everything runs through `make test`, which on the host runs `$(COMPOSE) run --rm
 ## Known limitations that will remain
 
 - The Arduino, the sensors, the serial cable and the Raspberry Pi are simulated. No hardware is exercised.
-- There is no MQTT or InfluxDB authentication or TLS, and the Grafana admin credentials are the defaults. This is a local demo only.
+- There is no MQTT or InfluxDB authentication or TLS, and the Grafana admin credentials are the defaults. This is loopback-only lab software; its ports must not be published beyond 127.0.0.1.
+- The processor keeps alert state for every zone and sensor id it has seen and never evicts it.
 - Any client that can reach the broker can publish readings for any zone; the processor validates payloads but does not authenticate senders.
 - A sensor that stops sending raises no alert: rules only evaluate readings that arrive, and readings outside the sensor limits are dropped as sensor faults rather than alerted.
 - Readings are lost while the broker is unreachable, beyond paho's in-memory queue. The processor does not retry failed InfluxDB writes and only logs them.

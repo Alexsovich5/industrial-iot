@@ -1,14 +1,20 @@
 COMPOSE ?= docker compose
 
-.PHONY: build test up down smoke check lint unit arduino integration
+.PHONY: build test ports up down smoke check lint unit arduino integration
 
 # Host targets (run Docker)
 
 build:
 	$(COMPOSE) build tests
 
-test: build
+test: build ports
 	$(COMPOSE) run --rm tests make check
+
+# Render the compose file (all profiles) and fail if any published port is
+# not on 127.0.0.1 in 20500-20599. Needs Compose v2 for --format json.
+ports:
+	$(COMPOSE) --profile test config --format json \
+		| $(COMPOSE) run --rm -T --no-deps tests python scripts/check_ports.py -
 
 up:
 	$(COMPOSE) up -d --build

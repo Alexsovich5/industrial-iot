@@ -31,6 +31,11 @@ LIMITS = collections.OrderedDict([
     ('vibration', (0.0, 28.0)),
 ])
 
+# Largest data-topic payload accepted. A payload from to_payload with the
+# longest ids is about 310 bytes; config/mosquitto.conf drops anything
+# above 4096 bytes at the broker.
+MAX_PAYLOAD_BYTES = 1024
+
 NUMERIC_KEYS = ('temperature', 'humidity', 'vibration')
 STRING_KEYS = ('gateway', 'zone', 'sensor_id', 'timestamp')
 

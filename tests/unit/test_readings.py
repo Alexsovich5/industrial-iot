@@ -205,3 +205,11 @@ def test_to_payload_round_trips_whole_second_timestamps():
     text = readings.to_payload(reading, 'gw-a', 'zone-a',
                                datetime.datetime(2017, 10, 2, 10, 17, 13))
     assert readings.from_payload(text)['timestamp'] == '2017-10-02T10:17:13Z'
+
+
+def test_largest_valid_payload_fits_the_payload_size_cap():
+    reading = readings.Reading('S' * 32, -40.0, 100.0, 28.0)
+    text = readings.to_payload(reading, 'g' * 64, 'z' * 64,
+                               datetime.datetime(2017, 12, 31, 23, 59, 59, 999999))
+    assert len(text.encode('utf-8')) <= readings.MAX_PAYLOAD_BYTES
+    assert readings.MAX_PAYLOAD_BYTES <= 4096
